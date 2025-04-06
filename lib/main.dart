@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
+import 'package:fluttertoast/fluttertoast.dart';
+
 
 void main() {
   runApp(SensorApp());
@@ -76,6 +78,12 @@ class _SensorAppState extends State<SensorApp> {
     final file = await _localFile;
     if (!(await file.exists())) {
       print("File does not exist: ${file.path}");
+      Fluttertoast.showToast(
+        msg: "File does not exist!",
+        toastLength: Toast.LENGTH_SHORT,
+        gravity: ToastGravity.BOTTOM,
+        fontSize: 16.0,
+    );
       return;
     }
 
@@ -91,7 +99,19 @@ class _SensorAppState extends State<SensorApp> {
 
     if (response.statusCode == 200 || response.statusCode == 201) {
       print("Upload successful!");
+      Fluttertoast.showToast(
+        msg: "Upload successful!",
+        toastLength: Toast.LENGTH_SHORT,
+        gravity: ToastGravity.BOTTOM,
+        fontSize: 16.0,
+      );
     } else {
+      Fluttertoast.showToast(
+        msg: "Upload failed! Status: ${response.statusCode}",
+        toastLength: Toast.LENGTH_SHORT,
+        gravity: ToastGravity.BOTTOM,
+        fontSize: 16.0,
+      );
       print("Upload failed with status: ${response.statusCode}");
     }
   }
