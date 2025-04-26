@@ -12,13 +12,13 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  sensors_plus: ^3.0.3
   path_provider: ^2.0.14
   http: ^1.1.0
-  fluttertoast: ^8.2.4
   flutter_launcher_icons: ^0.13.1
-  geolocator: ^10.0.1
   cupertino_icons: ^1.0.8
+  fluttertoast: ^8.2.4
+  sensors_plus: ^6.1.1
+  geolocator: ^10.0.1
 
 dev_dependencies:
   flutter_test:

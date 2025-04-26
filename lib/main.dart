@@ -29,6 +29,9 @@ class _SensorAppState extends State<SensorApp> {
   double _longitude = 0.0;
   double _altitude = 0.0;
 
+  // Barometer
+  double _pressure = 0.0;
+
   bool _recording = false;
   final List<String> _recordedData = [];
 
@@ -50,6 +53,15 @@ class _SensorAppState extends State<SensorApp> {
       _recordData("Accelerometer", event.x, event.y, event.z);
     });
 
+    magnetometerEvents.listen((event) {
+      setState(() {
+        _magX = event.x;
+        _magY = event.y;
+        _magZ = event.z;
+      });
+      _recordData("Magnetometer", event.x, event.y, event.z);
+    });
+
     gyroscopeEvents.listen((event) {
       setState(() {
         _gyroX = event.x;
@@ -59,14 +71,14 @@ class _SensorAppState extends State<SensorApp> {
       _recordData("Gyroscope", event.x, event.y, event.z);
     });
 
-    magnetometerEvents.listen((event) {
+    SensorsPlatform.instance.barometerEventStream().listen((event) {
       setState(() {
-        _magX = event.x;
-        _magY = event.y;
-        _magZ = event.z;
+        _pressure = event.pressure;
       });
-      _recordData("Magnetometer", event.x, event.y, event.z);
-    });
+      _recordPressure(event.pressure);
+    }, onError: (error) {
+      print('Barometer error: $error');
+    }, cancelOnError: true);
   }
 
   void _recordData(String sensorType, double x, double y, double z) {
@@ -78,7 +90,7 @@ class _SensorAppState extends State<SensorApp> {
     }
   }
 
-  // *** GPS implementation ***
+  // *** GPS Integration ***
   void _initGPS() async {
     bool serviceEnabled;
     LocationPermission permission;
@@ -124,6 +136,15 @@ class _SensorAppState extends State<SensorApp> {
     if (_recording) {
       final now = DateTime.now().toIso8601String();
       final dataLine = "$now, GPS, Lat: ${latitude.toStringAsFixed(6)}, Long: ${longitude.toStringAsFixed(6)}, Alt: ${altitude.toStringAsFixed(2)} m";
+      _recordedData.add(dataLine);
+    }
+  }
+
+  // *** Barometer Integration ***
+  void _recordPressure(double pressure) {
+    if (_recording) {
+      final now = DateTime.now().toIso8601String();
+      final dataLine = "$now, Barometer, Pressure: ${pressure.toStringAsFixed(2)} hPa";
       _recordedData.add(dataLine);
     }
   }
@@ -235,7 +256,8 @@ class _SensorAppState extends State<SensorApp> {
                 _buildSensorCard(
                     "Magnetometer", _magX, _magY, _magZ, Colors.red.shade300),
                 _buildSensorCard(
-                    "GPS", _latitude, _longitude, _altitude, Colors.red.shade700),
+                    "GPS", _latitude, _longitude, _altitude, const Color.fromARGB(255, 40, 142, 14)),
+                _buildBarometerCard("Barometer", _pressure, const Color.fromARGB(255, 73, 160, 204)),
                 SizedBox(height: 15),
                 TextField(
                   controller: _fileNameController,
@@ -301,6 +323,35 @@ class _SensorAppState extends State<SensorApp> {
       ),
     );
   }
+
+  Widget _buildBarometerCard(String title, double pressure, Color color) {
+    return Card(
+      elevation: 4,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      color: Colors.grey[200],
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title,
+                style: TextStyle(
+                    fontSize: 18, fontWeight: FontWeight.bold, color: color)),
+            Divider(color: color, thickness: 1.5),
+            SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text("Pressure (hPa):", style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: color)),
+                Text("${pressure.toStringAsFixed(2)}", style: TextStyle(fontSize: 16, fontWeight: FontWeight.w400, color: Colors.black87)),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
 
   Widget _buildSensorText(String axis, double value, Color color) {
     return Padding(
