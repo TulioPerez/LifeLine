@@ -11,6 +11,8 @@ void main() {
 }
 
 class SensorApp extends StatefulWidget {
+  const SensorApp({super.key});
+
   @override
   _SensorAppState createState() => _SensorAppState();
 }
@@ -21,7 +23,7 @@ class _SensorAppState extends State<SensorApp> {
   double _magX = 0.0, _magY = 0.0, _magZ = 0.0;
 
   bool _recording = false;
-  List<String> _recordedData = [];
+  final List<String> _recordedData = [];
 
   final TextEditingController _fileNameController =
   TextEditingController(text: 'sensor_data');
@@ -188,23 +190,23 @@ class _SensorAppState extends State<SensorApp> {
                   children: [
                     ElevatedButton(
                       onPressed: _recording ? null : _startRecording,
-                      child: Text("Start Recording"),
                       style:
                       ElevatedButton.styleFrom(backgroundColor: Colors.green),
+                      child: Text("Start Recording"),
                     ),
                     ElevatedButton(
                       onPressed: _recording ? _stopRecording : null,
-                      child: Text("Stop Recording"),
                       style:
                       ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                      child: Text("Stop Recording"),
                     ),
                   ],
                 ),
                 SizedBox(height: 10),
                 ElevatedButton(
                   onPressed: _uploadFileToBucket,
-                  child: Text("Upload File to Bucket"),
                   style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
+                  child: Text("Upload File to Bucket"),
                 ),
               ],
             ),
