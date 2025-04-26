@@ -4,6 +4,7 @@ import 'package:sensors_plus/sensors_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
 import 'package:fluttertoast/fluttertoast.dart';
+import 'package:geolocator/geolocator.dart';
 
 
 void main() {
@@ -18,9 +19,15 @@ class SensorApp extends StatefulWidget {
 }
 
 class _SensorAppState extends State<SensorApp> {
+  // IMU
   double _accX = 0.0, _accY = 0.0, _accZ = 0.0;
   double _gyroX = 0.0, _gyroY = 0.0, _gyroZ = 0.0;
   double _magX = 0.0, _magY = 0.0, _magZ = 0.0;
+
+  // GPS
+  double _latitude = 0.0;
+  double _longitude = 0.0;
+  double _altitude = 0.0;
 
   bool _recording = false;
   final List<String> _recordedData = [];
@@ -31,6 +38,8 @@ class _SensorAppState extends State<SensorApp> {
   @override
   void initState() {
     super.initState();
+
+    _initGPS();
 
     accelerometerEvents.listen((event) {
       setState(() {
@@ -65,6 +74,56 @@ class _SensorAppState extends State<SensorApp> {
       final now = DateTime.now().toIso8601String();
       final dataLine =
           "$now, $sensorType, X: ${x.toStringAsFixed(3)}, Y: ${y.toStringAsFixed(3)}, Z: ${z.toStringAsFixed(3)}";
+      _recordedData.add(dataLine);
+    }
+  }
+
+  // *** GPS implementation ***
+  void _initGPS() async {
+    bool serviceEnabled;
+    LocationPermission permission;
+
+    // Resolve permissions
+    serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      return;
+    }
+
+    permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+
+      if (permission == LocationPermission.denied) {
+        return;
+      }
+    }
+
+    if (permission == LocationPermission.deniedForever) {
+      return;
+    }
+
+    // Get GPS updates
+    Geolocator.getPositionStream(
+      locationSettings: LocationSettings(
+        distanceFilter: 1,
+        // *** enabled the following during testing only - uses more battery but updates more frequently. Can be set when battery level is high
+        accuracy: LocationAccuracy.bestForNavigation,
+        // accuracy: LocationAccuracy.high,
+      ),
+    ).listen((Position position) {
+      setState(() {
+        _latitude = position.latitude;
+        _longitude = position.longitude;
+        _altitude = position.altitude; 
+      });
+      _recordGPS(position.latitude, position.longitude, position.altitude);
+    });
+  }
+
+  void _recordGPS(double latitude, double longitude, double altitude) {
+    if (_recording) {
+      final now = DateTime.now().toIso8601String();
+      final dataLine = "$now, GPS, Lat: ${latitude.toStringAsFixed(6)}, Long: ${longitude.toStringAsFixed(6)}, Alt: ${altitude.toStringAsFixed(2)} m";
       _recordedData.add(dataLine);
     }
   }
@@ -175,6 +234,8 @@ class _SensorAppState extends State<SensorApp> {
                     "Gyroscope", _gyroX, _gyroY, _gyroZ, Colors.red.shade500),
                 _buildSensorCard(
                     "Magnetometer", _magX, _magY, _magZ, Colors.red.shade300),
+                _buildSensorCard(
+                    "GPS", _latitude, _longitude, _altitude, Colors.red.shade700),
                 SizedBox(height: 15),
                 TextField(
                   controller: _fileNameController,
