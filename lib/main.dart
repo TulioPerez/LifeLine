@@ -5,7 +5,9 @@ import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:geolocator/geolocator.dart';
-
+import 'package:noise_meter/noise_meter.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'dart:async';
 
 void main() {
   runApp(SensorApp());
@@ -18,7 +20,14 @@ class SensorApp extends StatefulWidget {
   _SensorAppState createState() => _SensorAppState();
 }
 
+// Handles to load / unload sensor stream subscriptions
 class _SensorAppState extends State<SensorApp> {
+  StreamSubscription? _accelSub;
+  StreamSubscription? _gyroSub;
+  StreamSubscription? _magnetSub;
+  StreamSubscription? _baroSub;
+  StreamSubscription<Position>? _gpsSub;
+
   // IMU
   double _accX = 0.0, _accY = 0.0, _accZ = 0.0;
   double _gyroX = 0.0, _gyroY = 0.0, _gyroZ = 0.0;
@@ -38,13 +47,41 @@ class _SensorAppState extends State<SensorApp> {
   final TextEditingController _fileNameController =
   TextEditingController(text: 'sensor_data');
 
+  // Check permissions
+  Future<Map<Permission, PermissionStatus>> _checkAndRequestPermissions() async {
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      Fluttertoast.showToast(msg: "Location services are disabled.");
+    }
+
+    final statuses = await [
+      Permission.locationWhenInUse,
+      Permission.microphone,
+    ].request();
+
+    if (statuses[Permission.locationWhenInUse] != PermissionStatus.granted) {
+      Fluttertoast.showToast(msg: "Location permission not granted.");
+    }
+
+    if (statuses[Permission.microphone] != PermissionStatus.granted) {
+      Fluttertoast.showToast(msg: "Microphone permission not granted.");
+    }
+
+    return statuses;
+  }
+
+
   @override
   void initState() {
     super.initState();
 
-    _initGPS();
+  _checkAndRequestPermissions().then((statuses) {
+    if (mounted && statuses[Permission.locationWhenInUse] == PermissionStatus.granted) {
+      _initGPS();
+    }
+  });
 
-    accelerometerEvents.listen((event) {
+    _accelSub = accelerometerEvents.listen((event) {
       setState(() {
         _accX = event.x;
         _accY = event.y;
@@ -53,7 +90,7 @@ class _SensorAppState extends State<SensorApp> {
       _recordData("Accelerometer", event.x, event.y, event.z);
     });
 
-    magnetometerEvents.listen((event) {
+    _magnetSub = magnetometerEvents.listen((event) {
       setState(() {
         _magX = event.x;
         _magY = event.y;
@@ -62,7 +99,7 @@ class _SensorAppState extends State<SensorApp> {
       _recordData("Magnetometer", event.x, event.y, event.z);
     });
 
-    gyroscopeEvents.listen((event) {
+    _gyroSub = gyroscopeEvents.listen((event) {
       setState(() {
         _gyroX = event.x;
         _gyroY = event.y;
@@ -71,14 +108,18 @@ class _SensorAppState extends State<SensorApp> {
       _recordData("Gyroscope", event.x, event.y, event.z);
     });
 
-    SensorsPlatform.instance.barometerEventStream().listen((event) {
-      setState(() {
-        _pressure = event.pressure;
-      });
-      _recordPressure(event.pressure);
-    }, onError: (error) {
-      print('Barometer error: $error');
-    }, cancelOnError: true);
+    _baroSub = SensorsPlatform.instance.barometerEventStream().listen(
+      (event) {
+        setState(() {
+          _pressure = event.pressure;
+        });
+        _recordPressure(event.pressure);
+      },
+      onError: (error) {
+        print('Barometer error: $error');
+      },
+      cancelOnError: true,
+    );
   }
 
   void _recordData(String sensorType, double x, double y, double z) {
@@ -91,42 +132,17 @@ class _SensorAppState extends State<SensorApp> {
   }
 
   // *** GPS Integration ***
-  void _initGPS() async {
-    bool serviceEnabled;
-    LocationPermission permission;
-
-    // Resolve permissions
-    serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) {
-      return;
-    }
-
-    permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-
-      if (permission == LocationPermission.denied) {
-        return;
-      }
-    }
-
-    if (permission == LocationPermission.deniedForever) {
-      return;
-    }
-
-    // Get GPS updates
+  void _initGPS() {
     Geolocator.getPositionStream(
       locationSettings: LocationSettings(
         distanceFilter: 1,
-        // *** enabled the following during testing only - uses more battery but updates more frequently. Can be set when battery level is high
         accuracy: LocationAccuracy.bestForNavigation,
-        // accuracy: LocationAccuracy.high,
       ),
     ).listen((Position position) {
       setState(() {
         _latitude = position.latitude;
         _longitude = position.longitude;
-        _altitude = position.altitude; 
+        _altitude = position.altitude;
       });
       _recordGPS(position.latitude, position.longitude, position.altitude);
     });
@@ -135,7 +151,8 @@ class _SensorAppState extends State<SensorApp> {
   void _recordGPS(double latitude, double longitude, double altitude) {
     if (_recording) {
       final now = DateTime.now().toIso8601String();
-      final dataLine = "$now, GPS, Lat: ${latitude.toStringAsFixed(6)}, Long: ${longitude.toStringAsFixed(6)}, Alt: ${altitude.toStringAsFixed(2)} m";
+      final dataLine =
+          "$now, GPS, Lat: ${latitude.toStringAsFixed(6)}, Long: ${longitude.toStringAsFixed(6)}, Alt: ${altitude.toStringAsFixed(2)} m";
       _recordedData.add(dataLine);
     }
   }
@@ -144,9 +161,27 @@ class _SensorAppState extends State<SensorApp> {
   void _recordPressure(double pressure) {
     if (_recording) {
       final now = DateTime.now().toIso8601String();
-      final dataLine = "$now, Barometer, Pressure: ${pressure.toStringAsFixed(2)} hPa";
+      final dataLine =
+          "$now, Barometer, Pressure: ${pressure.toStringAsFixed(2)} hPa";
       _recordedData.add(dataLine);
     }
+  }
+
+  void onError(Object e) {
+    print("Mic error: $e");
+  }
+
+
+  // Cancel active sensor stream subscriptions and dispose controllers
+  @override
+  void dispose() {
+    _accelSub?.cancel();
+    _gyroSub?.cancel();
+    _magnetSub?.cancel();
+    _baroSub?.cancel();
+    _gpsSub?.cancel();
+    _fileNameController.dispose();
+    super.dispose();
   }
 
   Future<void> _writeDataToFile() async {
@@ -165,12 +200,13 @@ class _SensorAppState extends State<SensorApp> {
         toastLength: Toast.LENGTH_SHORT,
         gravity: ToastGravity.BOTTOM,
         fontSize: 16.0,
-    );
+      );
       return;
     }
 
     final uploadUrl = Uri.parse(
-        "https://storage.googleapis.com/test_game_public/${file.uri.pathSegments.last}");
+      "https://storage.googleapis.com/test_game_public/${file.uri.pathSegments.last}",
+    );
 
     final fileBytes = await file.readAsBytes();
     final response = await http.put(
@@ -235,7 +271,10 @@ class _SensorAppState extends State<SensorApp> {
         appBarTheme: AppBarTheme(
           color: Colors.red,
           titleTextStyle: TextStyle(
-              color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
+            color: Colors.white,
+            fontSize: 22,
+            fontWeight: FontWeight.bold,
+          ),
           iconTheme: IconThemeData(color: Colors.white),
         ),
       ),
@@ -250,14 +289,38 @@ class _SensorAppState extends State<SensorApp> {
             child: Column(
               children: [
                 _buildSensorCard(
-                    "Accelerometer", _accX, _accY, _accZ, Colors.red.shade700),
+                  "Accelerometer",
+                  _accX,
+                  _accY,
+                  _accZ,
+                  Colors.red.shade700,
+                ),
                 _buildSensorCard(
-                    "Gyroscope", _gyroX, _gyroY, _gyroZ, Colors.red.shade500),
+                  "Gyroscope",
+                  _gyroX,
+                  _gyroY,
+                  _gyroZ,
+                  Colors.red.shade500,
+                ),
                 _buildSensorCard(
-                    "Magnetometer", _magX, _magY, _magZ, Colors.red.shade300),
+                  "Magnetometer",
+                  _magX,
+                  _magY,
+                  _magZ,
+                  Colors.red.shade300,
+                ),
                 _buildSensorCard(
-                    "GPS", _latitude, _longitude, _altitude, const Color.fromARGB(255, 40, 142, 14)),
-                _buildBarometerCard("Barometer", _pressure, const Color.fromARGB(255, 73, 160, 204)),
+                  "GPS",
+                  _latitude,
+                  _longitude,
+                  _altitude,
+                  const Color.fromARGB(255, 40, 142, 14),
+                ),
+                _buildBarometerCard(
+                  "Barometer",
+                  _pressure,
+                  const Color.fromARGB(255, 73, 160, 204),
+                ),
                 SizedBox(height: 15),
                 TextField(
                   controller: _fileNameController,
@@ -273,14 +336,16 @@ class _SensorAppState extends State<SensorApp> {
                   children: [
                     ElevatedButton(
                       onPressed: _recording ? null : _startRecording,
-                      style:
-                      ElevatedButton.styleFrom(backgroundColor: Colors.green),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green,
+                      ),
                       child: Text("Start Recording"),
                     ),
                     ElevatedButton(
                       onPressed: _recording ? _stopRecording : null,
-                      style:
-                      ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red,
+                      ),
                       child: Text("Stop Recording"),
                     ),
                   ],
@@ -300,7 +365,12 @@ class _SensorAppState extends State<SensorApp> {
   }
 
   Widget _buildSensorCard(
-      String title, double x, double y, double z, Color color) {
+    String title,
+    double x,
+    double y,
+    double z,
+    Color color,
+  ) {
     return Card(
       elevation: 4,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -310,9 +380,14 @@ class _SensorAppState extends State<SensorApp> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(title,
-                style: TextStyle(
-                    fontSize: 18, fontWeight: FontWeight.bold, color: color)),
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: color,
+              ),
+            ),
             Divider(color: color, thickness: 1.5),
             SizedBox(height: 8),
             _buildSensorText("X", x, Colors.red.shade900),
@@ -334,16 +409,35 @@ class _SensorAppState extends State<SensorApp> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(title,
-                style: TextStyle(
-                    fontSize: 18, fontWeight: FontWeight.bold, color: color)),
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: color,
+              ),
+            ),
             Divider(color: color, thickness: 1.5),
             SizedBox(height: 8),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text("Pressure (hPa):", style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: color)),
-                Text("${pressure.toStringAsFixed(2)}", style: TextStyle(fontSize: 16, fontWeight: FontWeight.w400, color: Colors.black87)),
+                Text(
+                  "Pressure (hPa):",
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                    color: color,
+                  ),
+                ),
+                Text(
+                  "${pressure.toStringAsFixed(2)}",
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w400,
+                    color: Colors.black87,
+                  ),
+                ),
               ],
             ),
           ],
@@ -352,21 +446,28 @@ class _SensorAppState extends State<SensorApp> {
     );
   }
 
-
   Widget _buildSensorText(String axis, double value, Color color) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text("$axis Axis:",
-              style: TextStyle(
-                  fontSize: 16, fontWeight: FontWeight.w500, color: color)),
-          Text(value.toStringAsFixed(3),
-              style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w400,
-                  color: Colors.black87)),
+          Text(
+            "$axis Axis:",
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w500,
+              color: color,
+            ),
+          ),
+          Text(
+            value.toStringAsFixed(3),
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w400,
+              color: Colors.black87,
+            ),
+          ),
         ],
       ),
     );
