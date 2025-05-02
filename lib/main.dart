@@ -27,6 +27,7 @@ class _SensorAppState extends State<SensorApp> {
   StreamSubscription? _magnetSub;
   StreamSubscription? _baroSub;
   StreamSubscription<Position>? _gpsSub;
+  StreamSubscription<NoiseReading>? _micSub;
 
   // IMU
   double _accX = 0.0, _accY = 0.0, _accZ = 0.0;
@@ -40,6 +41,10 @@ class _SensorAppState extends State<SensorApp> {
 
   // Barometer
   double _pressure = 0.0;
+
+  // Microphone
+  final NoiseMeter _noiseMeter = NoiseMeter();
+  double _micLevel = 0.0;
 
   bool _recording = false;
   final List<String> _recordedData = [];
@@ -79,6 +84,10 @@ class _SensorAppState extends State<SensorApp> {
     if (mounted && statuses[Permission.locationWhenInUse] == PermissionStatus.granted) {
       _initGPS();
     }
+    if (mounted && statuses[Permission.microphone] == PermissionStatus.granted) {
+      _initMic();
+    }
+
   });
 
     _accelSub = accelerometerEvents.listen((event) {
@@ -167,10 +176,32 @@ class _SensorAppState extends State<SensorApp> {
     }
   }
 
+  // *** Microphone Integration ***
+  void _initMic() {
+    try {
+      _micSub = _noiseMeter.noise.listen((NoiseReading reading) {
+        setState(() {
+          _micLevel = reading.meanDecibel;
+        });
+        _recordMic(reading.meanDecibel);
+      });
+    } catch (err) {
+      print("Mic error: $err");
+    }
+  }
+
+  void _recordMic(double decibel) {
+    if (_recording) {
+      final now = DateTime.now().toIso8601String();
+      final dataLine = "$now, Microphone, dB: ${decibel.toStringAsFixed(2)}";
+      _recordedData.add(dataLine);
+    }
+  }
+
+
   void onError(Object e) {
     print("Mic error: $e");
   }
-
 
   // Cancel active sensor stream subscriptions and dispose controllers
   @override
@@ -180,6 +211,7 @@ class _SensorAppState extends State<SensorApp> {
     _magnetSub?.cancel();
     _baroSub?.cancel();
     _gpsSub?.cancel();
+    _micSub?.cancel();
     _fileNameController.dispose();
     super.dispose();
   }
@@ -321,6 +353,11 @@ class _SensorAppState extends State<SensorApp> {
                   _pressure,
                   const Color.fromARGB(255, 73, 160, 204),
                 ),
+                _buildMicrophoneCard(
+                  "Microphone",
+                  _micLevel,
+                  Colors.deepPurple,
+                ),
                 SizedBox(height: 15),
                 TextField(
                   controller: _fileNameController,
@@ -445,6 +482,41 @@ class _SensorAppState extends State<SensorApp> {
       ),
     );
   }
+
+  Widget _buildMicrophoneCard(String title, double micLevel, Color color) {
+    return Card(
+      elevation: 4,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      color: Colors.grey[200],
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title,
+                style: TextStyle(
+                    fontSize: 18, fontWeight: FontWeight.bold, color: color)),
+            Divider(color: color, thickness: 1.5),
+            SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text("Level (dB):",
+                    style: TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.w500, color: color)),
+                Text("${micLevel.toStringAsFixed(2)}",
+                    style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w400,
+                        color: Colors.black87)),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
 
   Widget _buildSensorText(String axis, double value, Color color) {
     return Padding(
