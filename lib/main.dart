@@ -49,6 +49,11 @@ class _SensorAppState extends State<SensorApp> {
   bool _recording = false;
   final List<String> _recordedData = [];
 
+  // Test emergency
+  bool _testMode = false;
+  Timer? _testTimer;
+
+
   final TextEditingController _fileNameController =
   TextEditingController(text: 'sensor_data');
 
@@ -212,6 +217,7 @@ class _SensorAppState extends State<SensorApp> {
     _baroSub?.cancel();
     _gpsSub?.cancel();
     _micSub?.cancel();
+    _testTimer?.cancel();
     _fileNameController.dispose();
     super.dispose();
   }
@@ -266,6 +272,37 @@ class _SensorAppState extends State<SensorApp> {
     }
   }
 
+  Future<void> _uploadTestFileToBucket() async {
+    final file = await _getTestFile();
+    if (!(await file.exists())) {
+      print("Test file does not exist: ${file.path}");
+      return;
+    }
+
+    final uploadUrl = Uri.parse(
+      "https://storage.googleapis.com/test_game_public/${file.uri.pathSegments.last}",
+    );
+
+    final fileBytes = await file.readAsBytes();
+    final response = await http.put(
+      uploadUrl,
+      headers: {
+        'Content-Type': 'text/plain',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0',
+      },
+      body: fileBytes,
+    );
+
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      print("Test file upload successful!");
+    } else {
+      print("Test upload failed! Status: ${response.statusCode}");
+    }
+  }
+
+
   Future<String> get _localPath async {
     final directory = await getApplicationDocumentsDirectory();
     return directory.path;
@@ -279,6 +316,12 @@ class _SensorAppState extends State<SensorApp> {
     return File('$path/$fileName');
   }
 
+  Future<File> _getTestFile() async {
+    final path = await _localPath;
+    return File('$path/test_emergency.txt');
+  }
+
+
   void _startRecording() {
     setState(() {
       _recordedData.clear();
@@ -291,6 +334,33 @@ class _SensorAppState extends State<SensorApp> {
       _recording = false;
     });
     await _writeDataToFile();
+  }
+
+  void _startTest() {
+    _testMode = true;
+    _testTimer = Timer.periodic(Duration(seconds: 3), (_) async {
+      final now = DateTime.now().toIso8601String();
+      final dataLines = [
+        "$now, Accelerometer, X: ${_accX.toStringAsFixed(3)}, Y: ${_accY.toStringAsFixed(3)}, Z: ${_accZ.toStringAsFixed(3)}",
+        "$now, Gyroscope, X: ${_gyroX.toStringAsFixed(3)}, Y: ${_gyroY.toStringAsFixed(3)}, Z: ${_gyroZ.toStringAsFixed(3)}",
+        "$now, Magnetometer, X: ${_magX.toStringAsFixed(3)}, Y: ${_magY.toStringAsFixed(3)}, Z: ${_magZ.toStringAsFixed(3)}",
+        "$now, GPS, Lat: ${_latitude.toStringAsFixed(6)}, Long: ${_longitude.toStringAsFixed(6)}, Alt: ${_altitude.toStringAsFixed(2)} m",
+        "$now, Barometer, Pressure: ${_pressure.toStringAsFixed(2)} hPa",
+        "$now, Microphone, dB: ${_micLevel.toStringAsFixed(2)}",
+      ];
+      final file = await _getTestFile();
+
+      await file.writeAsString(dataLines.join('\n'));
+      print("Test data written to: ${file.path}");
+      print("Mic Level: $_micLevel, Acc: $_accX, $_accY, $_accZ");
+
+      await _uploadTestFileToBucket();
+    });
+  }
+
+  void _stopTest() {
+    _testTimer?.cancel();
+    _testMode = false;
   }
 
   @override
@@ -389,9 +459,16 @@ class _SensorAppState extends State<SensorApp> {
                 ),
                 SizedBox(height: 10),
                 ElevatedButton(
-                  onPressed: _uploadFileToBucket,
+                  onPressed: _testMode ? null : _uploadFileToBucket,
                   style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
                   child: Text("Upload File to Bucket"),
+                ),
+                ElevatedButton(
+                  onPressed: _testMode ? _stopTest : _startTest,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _testMode ? Colors.orange : Colors.purple,
+                  ),
+                  child: Text(_testMode ? "Stop Test" : "Test"),
                 ),
               ],
             ),
