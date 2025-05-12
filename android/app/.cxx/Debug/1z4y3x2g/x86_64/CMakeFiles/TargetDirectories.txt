@@ -1,0 +1,2 @@
+C:/Users/reidl/StudioProjects/Lifeline/android/app/.cxx/Debug/1z4y3x2g/x86_64/CMakeFiles/edit_cache.dir
+C:/Users/reidl/StudioProjects/Lifeline/android/app/.cxx/Debug/1z4y3x2g/x86_64/CMakeFiles/rebuild_cache.dir
