@@ -1,16 +1,10 @@
-# lifeline
+# LifeLine
 
-A new Flutter project.
+LifeLine is a mobile app built with Flutter that detects falls using sensor data and a TensorFlow Lite model. If a fall is detected, the app logs sensor and location data, and can simulate sending it as an emergency report.
 
-## Getting Started
+## Features
 
-This project is a starting point for a Flutter application.
-
-A few resources to get you started if this is your first Flutter project:
-
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+- Fall detection using accelerometer data and a TFLite model
+- GPS and barometer data collection
+- Emergency file generation on detected falls
+- Periodic monitoring via "Activate Lifeline" button
